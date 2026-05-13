@@ -35,7 +35,7 @@ MCP_GATEWAY_PORT=18811
 Run setup once before starting the compose deployment:
 
 ```sh
-docker run -it --rm -v /home/ubuntu/.hermes:/opt/data -e HERMES_UID=1000 -e HERMES_GID=1000 nousresearch/hermes-agent:latest setup
+docker run -it --rm -v /home/ubuntu/.hermes:/opt/data -e HERMES_UID=10000 -e HERMES_GID=10000 nousresearch/hermes-agent:latest setup
 ```
 
 ## Run
@@ -49,7 +49,7 @@ docker run -it --rm -v /home/ubuntu/.hermes:/opt/data -e HERMES_UID=1000 -e HERM
 After the containers are running, register Docker MCP Gateway inside Hermes:
 
 ```sh
-docker exec --user "${HERMES_UID:-1000}:${HERMES_GID:-1000}" -it "${HERMES_CONTAINER_NAME:-hermes}" sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://mcp-gateway:8811/mcp'"
+docker exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" -it "${HERMES_CONTAINER_NAME:-hermes}" sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://mcp-gateway:8811/mcp'"
 ```
 
 The Hermes CLI path inside the container is `/opt/hermes/.venv/bin/hermes`.
@@ -68,13 +68,15 @@ docker compose down
 
 ## Self-Restart Hermes
 
-To restart Hermes from inside the running container, terminate PID 1:
+The official Hermes image starts as root only long enough for its entrypoint to prepare the mounted data directory, then drops privileges to the `hermes` user. Do not add `cap_add: KILL`; the dropped Hermes process has no effective capability set, so `cap_add: KILL` does not make `kill 1` work.
+
+To restart Hermes from inside the running container, terminate the Hermes gateway process owned by the same non-root user:
 
 ```sh
-docker compose exec hermes sh -lc 'kill 1'
+docker compose exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" hermes sh -lc 'kill -TERM "$(pgrep -u "$(id -u)" -f "/opt/hermes/.venv/bin/hermes gateway run" | head -n 1)"'
 ```
 
-The compose service is configured with `init: true`, `user: root`, and `restart: always`, so Docker Compose starts the Hermes container again.
+Docker Compose starts the Hermes container again because the service uses `restart: always`.
 
 ## Verification
 
@@ -83,7 +85,7 @@ for script in install.sh run.sh; do bash -n "$script"; done
 docker compose config >/dev/null
 docker compose up -d
 docker compose ps
-docker compose exec hermes sh -lc 'kill 1'
+docker compose exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" hermes sh -lc 'kill -TERM "$(pgrep -u "$(id -u)" -f "/opt/hermes/.venv/bin/hermes gateway run" | head -n 1)"'
 sleep 8
 docker compose ps
 ```

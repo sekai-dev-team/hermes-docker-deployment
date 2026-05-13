@@ -4,7 +4,7 @@
 
 **Goal:** Build a new minimal deployment repository that runs official Hermes with Docker MCP Gateway and documents migration away from `yui-ecosystem`.
 
-**Architecture:** The stack has two long-running services: `hermes` and `mcp-gateway`. Hermes uses `nousresearch/hermes-agent:latest`, never mounts docker.sock, and self-restarts through `kill 1` plus Compose `restart: always`; Docker MCP Gateway is the only service with docker.sock access and acts as the MCP aggregation point.
+**Architecture:** The stack has two long-running services: `hermes` and `mcp-gateway`. Hermes uses `nousresearch/hermes-agent:latest`, never mounts docker.sock, and self-restarts by terminating the non-root Hermes gateway process plus Compose `restart: always`; Docker MCP Gateway is the only service with docker.sock access and acts as the MCP aggregation point.
 
 **Tech Stack:** Docker Compose, Bash, Docker MCP Gateway, Hermes official Docker image, Markdown docs.
 
@@ -131,8 +131,8 @@ HERMES_CONTAINER_NAME=hermes
 HERMES_DATA_DIR=/home/ubuntu/.hermes
 HERMES_GATEWAY_PORT=8642
 HERMES_DASHBOARD_PORT=9119
-HERMES_UID=1000
-HERMES_GID=1000
+HERMES_UID=10000
+HERMES_GID=10000
 
 MCP_GATEWAY_CONTAINER_NAME=mcp-gateway
 MCP_GATEWAY_PORT=8811
@@ -168,7 +168,6 @@ services:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     container_name: ${HERMES_CONTAINER_NAME:-hermes}
     init: true
-    user: root
     restart: always
     command: gateway run
     depends_on:
@@ -180,8 +179,8 @@ services:
       - ${HERMES_DATA_DIR:-/home/ubuntu/.hermes}:/opt/data
     environment:
       HERMES_DASHBOARD: "1"
-      HERMES_UID: "${HERMES_UID:-1000}"
-      HERMES_GID: "${HERMES_GID:-1000}"
+      HERMES_UID: "${HERMES_UID:-10000}"
+      HERMES_GID: "${HERMES_GID:-10000}"
       MCP_GATEWAY_URL: "${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}"
     shm_size: "1g"
     mem_limit: "4g"
@@ -210,7 +209,7 @@ Expected: exit 0. Inspect generated config:
 rg -n "docker.sock|container_name|restart|init|user:" /tmp/hermes-docker-deployment-compose.yml
 ```
 
-Expected: docker.sock appears only under `mcp-gateway`; Hermes has `init: true`, `user: root`, and `restart: always`.
+Expected: docker.sock appears only under `mcp-gateway`; Hermes has `init: true` and `restart: always`.
 
 - [ ] **Step 4: Commit environment and Compose files**
 
@@ -270,8 +269,8 @@ echo
 echo "First-time Hermes setup:"
 echo "  docker run -it --rm \\"
 echo "    -v /home/ubuntu/.hermes:/opt/data \\"
-echo "    -e HERMES_UID=1000 \\"
-echo "    -e HERMES_GID=1000 \\"
+echo "    -e HERMES_UID=10000 \\"
+echo "    -e HERMES_GID=10000 \\"
 echo "    nousresearch/hermes-agent:latest setup"
 echo
 echo "Then run:"
@@ -445,8 +444,8 @@ This repository deploys Hermes with Docker MCP Gateway. It replaces the old `yui
 ```bash
 docker run -it --rm \
   -v /home/ubuntu/.hermes:/opt/data \
-  -e HERMES_UID=1000 \
-  -e HERMES_GID=1000 \
+  -e HERMES_UID=10000 \
+  -e HERMES_GID=10000 \
   nousresearch/hermes-agent:latest setup
 ```
 
@@ -473,10 +472,10 @@ docker compose down
 Inside the Hermes container, run:
 
 ```bash
-kill 1
+kill -TERM "$(pgrep -u "$(id -u)" -f "/opt/hermes/.venv/bin/hermes gateway run" | head -n 1)"
 ```
 
-Compose restarts Hermes because the service uses `init: true`, `user: root`, and `restart: always`.
+Compose restarts Hermes because the service uses `init: true` and `restart: always`.
 
 ## Verification
 
@@ -487,7 +486,7 @@ done
 docker compose config >/dev/null
 docker compose up -d
 docker compose ps
-docker compose exec hermes sh -lc 'kill 1'
+docker compose exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" hermes sh -lc 'kill -TERM "$(pgrep -u "$(id -u)" -f "/opt/hermes/.venv/bin/hermes gateway run" | head -n 1)"'
 sleep 5
 docker compose ps
 ```
@@ -502,7 +501,7 @@ Also include the verified Hermes MCP registration command from Task 1.
 Run:
 
 ```bash
-rg -n "docker.sock|kill 1|docker compose|hermes-agent|yui-ecosystem|mcp-gateway" README.md docker-compose.yml .env.example
+rg -n "docker.sock|terminate the non-root Hermes gateway process|docker compose|hermes-agent|yui-ecosystem|mcp-gateway" README.md docker-compose.yml .env.example
 ```
 
 Expected: output shows the intended architecture and no instruction to mount docker.sock into Hermes.
@@ -553,7 +552,7 @@ The old `/home/ubuntu/yui-ecosystem` repository is archived. It remains useful a
 | Old concept | New model |
 | --- | --- |
 | Host MCP service | Docker MCP Gateway |
-| `restart_self` | `kill 1` inside Hermes plus Compose `restart: always` |
+| `restart_self` | `terminate the non-root Hermes gateway process` inside Hermes plus Compose `restart: always` |
 | Restart logs | `docker compose logs hermes` |
 | Eco-plugin registry | Docker MCP catalog/profile entries |
 | Eco-plugin install | Docker MCP Gateway Dynamic MCP or profile server add flow |
@@ -632,7 +631,7 @@ Run:
 
 ```bash
 before="$(docker inspect hermes --format '{{.State.StartedAt}}')"
-docker exec hermes sh -lc 'kill 1' || true
+docker compose exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" hermes sh -lc 'kill -TERM "$(pgrep -u "$(id -u)" -f "/opt/hermes/.venv/bin/hermes gateway run" | head -n 1)"'
 sleep 8
 after="$(docker inspect hermes --format '{{.State.StartedAt}}')"
 test "$before" != "$after"

@@ -40,7 +40,7 @@ echo "MCP Gateway: http://127.0.0.1:${MCP_GATEWAY_PORT:-8811}/mcp"
 echo
 echo "Manual Hermes MCP registration command:"
 printf 'docker exec --user "%s:%s" -it "%s" sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url '\''%s'\''"\n' \
-  "${HERMES_UID:-1000}" \
-  "${HERMES_GID:-1000}" \
+  "${HERMES_UID:-10000}" \
+  "${HERMES_GID:-10000}" \
   "$HERMES_NAME" \
   "${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}"

@@ -50,9 +50,8 @@ The deployment contains two core containers:
 Hermes self-restart is handled by:
 
 - `init: true`, so Docker injects an init process as PID 1.
-- `user: root`, so the Hermes process can signal PID 1.
 - `restart: always`, so Compose restarts the container after it exits.
-- Agent command `kill 1`, which terminates the container and lets Compose bring it back.
+- Agent command terminates the non-root Hermes gateway process; Compose brings the container back.
 
 This keeps Docker control out of the Hermes container. Docker access is delegated to Gateway-managed MCP tools instead.
 
@@ -74,7 +73,7 @@ The repository should contain:
   - Uses a shared Docker network.
   - Binds Hermes UI/API ports to `127.0.0.1`.
   - Gives docker.sock only to `mcp-gateway`.
-  - Configures Hermes restart with `init: true`, `user: root`, and `restart: always`.
+  - Configures Hermes restart with `init: true` and `restart: always`.
 
 - `install.sh`
   - Creates `.env` from `.env.example` when missing.
@@ -92,7 +91,7 @@ The repository should contain:
 - `README.md`
   - Explains the new architecture and why `yui-ecosystem` is archived.
   - Documents install, first-time setup, run, stop, logs, and verification.
-  - Documents `kill 1` self-restart.
+  - Documents non-root Hermes process self-restart.
   - Documents that Hermes must not receive docker.sock.
 
 - `docs/migration-from-yui-ecosystem.md`
@@ -134,7 +133,7 @@ Old to new mapping:
 | Old yui-ecosystem concept | New design |
 | --- | --- |
 | Host-side MCP service on port 8766 | Docker MCP Gateway |
-| `restart_self` | `kill 1` inside Hermes container plus Compose `restart: always` |
+| `restart_self` | Terminate the non-root Hermes gateway process plus Compose `restart: always` |
 | `get_restart_status` and `tail_restart_log` | `docker compose ps` and `docker compose logs` |
 | `eco_plugin_install` | Docker MCP Gateway catalog/profile/Dynamic MCP server add flow |
 | `eco_plugin_start` and `eco_plugin_stop` | Gateway-managed MCP server lifecycle, with optional future Docker management MCP tools |
@@ -152,7 +151,7 @@ After implementation:
 - `docker compose config` succeeds.
 - `docker compose up -d` starts both services.
 - Hermes can be configured to talk to Docker MCP Gateway.
-- `kill 1` from inside the Hermes container causes Compose to restart Hermes.
+- terminating the non-root Hermes gateway process causes Compose to restart Hermes.
 - Documentation clearly states that `/home/ubuntu/yui-ecosystem` is archived and its MCP service/tools are deprecated.
 
 ## Open Risks

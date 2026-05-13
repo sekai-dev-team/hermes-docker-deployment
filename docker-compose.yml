@@ -25,7 +25,6 @@ services:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     container_name: ${HERMES_CONTAINER_NAME:-hermes}
     init: true
-    user: root
     restart: always
     command: gateway run
     depends_on:
@@ -38,8 +37,8 @@ services:
       - ${HERMES_DATA_DIR:-/home/ubuntu/.hermes}:/opt/data
     environment:
       HERMES_DASHBOARD: "1"
-      HERMES_UID: ${HERMES_UID:-1000}
-      HERMES_GID: ${HERMES_GID:-1000}
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
       MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}
     shm_size: 1g
     mem_limit: 4g

@@ -23,7 +23,7 @@ The host-side MCP service and eco-plugin lifecycle from `yui-ecosystem` are inte
 | Old yui-ecosystem component | New deployment path |
 | --- | --- |
 | Host MCP service | Docker MCP Gateway |
-| `restart_self` | `kill 1` inside Hermes plus Compose `restart: always` |
+| `restart_self` | Terminate the non-root Hermes gateway process plus Compose `restart: always` |
 | Restart logs | `docker compose logs hermes` |
 | Eco-plugin registry | Docker MCP catalog/profile entries |
 | Eco-plugin install | Docker MCP Gateway Dynamic MCP or profile server add flow |
@@ -34,9 +34,9 @@ The host-side MCP service and eco-plugin lifecycle from `yui-ecosystem` are inte
 If you reuse an existing `/home/ubuntu/.hermes` data directory, remove stale MCP registrations from the old deployment before adding Docker MCP Gateway:
 
 ```bash
-docker exec --user "1000:1000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp remove yui-ecosystem"
-docker exec --user "1000:1000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp remove sandbox-packages"
-docker exec --user "1000:1000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://mcp-gateway:8811/mcp'"
+docker exec --user "10000:10000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp remove yui-ecosystem"
+docker exec --user "10000:10000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp remove sandbox-packages"
+docker exec --user "10000:10000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://mcp-gateway:8811/mcp'"
 ```
 
 The remove commands are safe to skip if those servers are not listed in `hermes mcp list`.
