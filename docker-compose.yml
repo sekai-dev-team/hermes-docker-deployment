@@ -10,6 +10,14 @@ services:
     command:
       - --port=8811
       - --transport=${MCP_GATEWAY_TRANSPORT:-streaming}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -S --timeout=2 --tries=1 -O /dev/null http://localhost:8811/mcp 2>&1 | grep -q 'HTTP/'
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
     networks:
       - hermes-mcp
 
@@ -21,7 +29,8 @@ services:
     restart: always
     command: gateway run
     depends_on:
-      - mcp-gateway
+      mcp-gateway:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${HERMES_GATEWAY_PORT:-8642}:8642"
       - "127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}:9119"
