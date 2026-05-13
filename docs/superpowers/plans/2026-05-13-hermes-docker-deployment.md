@@ -260,7 +260,9 @@ SCRIPTS=(install.sh)
 if [ -f run.sh ]; then
   SCRIPTS+=(run.sh)
 fi
-bash -n "${SCRIPTS[@]}"
+for script in "${SCRIPTS[@]}"; do
+  bash -n "$script"
+done
 "${DOCKER_COMPOSE[@]}" config >/dev/null
 
 echo "hermes-docker-deployment is installed."

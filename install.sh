@@ -21,7 +21,9 @@ fi
 
 SCRIPTS=(install.sh)
 [ -f run.sh ] && SCRIPTS+=(run.sh)
-bash -n "${SCRIPTS[@]}"
+for script in "${SCRIPTS[@]}"; do
+  bash -n "$script"
+done
 
 "${DOCKER_COMPOSE[@]}" config >/dev/null
 
