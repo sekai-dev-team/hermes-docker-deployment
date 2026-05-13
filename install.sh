@@ -28,6 +28,7 @@ fi
 
 SCRIPTS=(install.sh)
 [ -f run.sh ] && SCRIPTS+=(run.sh)
+[ -f scripts/init-profile.sh ] && SCRIPTS+=(scripts/init-profile.sh)
 for script in "${SCRIPTS[@]}"; do
   bash -n "$script"
 done
@@ -35,6 +36,9 @@ done
 "${DOCKER_COMPOSE[@]}" config >/dev/null
 
 echo "Hermes Docker deployment installed."
+echo "Before starting the stack for the first time, initialize the Docker MCP profile:"
+echo "./scripts/init-profile.sh"
+echo
 echo "For first-time Hermes setup, run:"
 printf '%s run -it --rm -v %s:/opt/data -e HERMES_UID=%s -e HERMES_GID=%s %s setup\n' \
   "${DOCKER[*]}" \

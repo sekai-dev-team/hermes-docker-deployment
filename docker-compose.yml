@@ -7,9 +7,13 @@ services:
       - "127.0.0.1:${MCP_GATEWAY_PORT:-8811}:8811"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - hermes-mcp-config:/root/.docker/mcp
+      - ./catalog:/catalog:ro
     command:
       - --port=8811
       - --transport=${MCP_GATEWAY_TRANSPORT:-streaming}
+      - --profile=${MCP_GATEWAY_PROFILE:-hermes-default}
+      - --watch
     healthcheck:
       test:
         - CMD-SHELL
@@ -46,5 +50,17 @@ services:
     networks:
       - hermes-mcp
 
+  profile-manager:
+    build:
+      context: ./profile-manager
+    image: ${PROFILE_MANAGER_IMAGE:-local/hermes-profile-manager:latest}
+    profiles:
+      - build-only
+
 networks:
   hermes-mcp:
+
+volumes:
+  hermes-mcp-config:
+    name: hermes-mcp-config
+    external: true
