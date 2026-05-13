@@ -481,7 +481,9 @@ Compose restarts Hermes because the service uses `init: true`, `user: root`, and
 ## Verification
 
 ```bash
-bash -n install.sh run.sh
+for script in install.sh run.sh; do
+  bash -n "$script"
+done
 docker compose config >/dev/null
 docker compose up -d
 docker compose ps
@@ -595,7 +597,9 @@ Expected: commit succeeds.
 Run:
 
 ```bash
-bash -n install.sh run.sh
+for script in install.sh run.sh; do
+  bash -n "$script"
+done
 docker compose config >/dev/null
 ```
 
