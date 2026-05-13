@@ -1,0 +1,42 @@
+services:
+  mcp-gateway:
+    image: ${MCP_GATEWAY_IMAGE:-docker/mcp-gateway:latest}
+    container_name: ${MCP_GATEWAY_CONTAINER_NAME:-mcp-gateway}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MCP_GATEWAY_PORT:-8811}:8811"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - --port=8811
+      - --transport=${MCP_GATEWAY_TRANSPORT:-streaming}
+    networks:
+      - hermes-mcp
+
+  hermes:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    container_name: ${HERMES_CONTAINER_NAME:-hermes}
+    init: true
+    user: root
+    restart: always
+    command: gateway run
+    depends_on:
+      - mcp-gateway
+    ports:
+      - "127.0.0.1:${HERMES_GATEWAY_PORT:-8642}:8642"
+      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}:9119"
+    volumes:
+      - ${HERMES_DATA_DIR:-/home/ubuntu/.hermes}:/opt/data
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_UID: ${HERMES_UID:-1000}
+      HERMES_GID: ${HERMES_GID:-1000}
+      MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}
+    shm_size: 1g
+    mem_limit: 4g
+    cpus: 2.0
+    networks:
+      - hermes-mcp
+
+networks:
+  hermes-mcp:
