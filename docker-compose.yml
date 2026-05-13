@@ -34,7 +34,7 @@ services:
       - "127.0.0.1:${HERMES_GATEWAY_PORT:-8642}:8642"
       - "127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}:9119"
     volumes:
-      - ${HERMES_DATA_DIR:-/home/ubuntu/.hermes}:/opt/data
+      - ${HERMES_DATA_DIR:-/home/<your_username>/.hermes}:/opt/data
     environment:
       HERMES_DASHBOARD: "1"
       HERMES_UID: ${HERMES_UID:-10000}

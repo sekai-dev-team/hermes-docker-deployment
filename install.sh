@@ -38,7 +38,7 @@ echo "Hermes Docker deployment installed."
 echo "For first-time Hermes setup, run:"
 printf '%s run -it --rm -v %s:/opt/data -e HERMES_UID=%s -e HERMES_GID=%s %s setup\n' \
   "${DOCKER[*]}" \
-  "${HERMES_DATA_DIR:-/home/ubuntu/.hermes}" \
+  "${HERMES_DATA_DIR:-/home/<your_username>/.hermes}" \
   "${HERMES_UID:-10000}" \
   "${HERMES_GID:-10000}" \
   "${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"

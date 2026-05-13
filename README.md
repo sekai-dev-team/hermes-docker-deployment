@@ -1,10 +1,25 @@
 # Hermes Docker Deployment
 
-Deployment wrapper for the official Hermes agent container with Docker MCP access routed through Docker MCP Gateway. This repo replaces the archived `yui-ecosystem` deployment path at a high level; detailed migration notes belong in the migration doc.
+Docker Compose deployment for the official Hermes agent container with Docker MCP access routed through Docker MCP Gateway.
 
 ## Architecture
 
-- Hermes runs from the official image `nousresearch/hermes-agent:latest`.
+```mermaid
+flowchart TB
+    User["User / client"] -->|Hermes gateway / dashboard| Hermes
+
+    subgraph Compose["Docker Compose project"]
+        Hermes["hermes<br/>nousresearch/hermes-agent:latest<br/>no docker.sock"]
+        Gateway["mcp-gateway<br/>docker/mcp-gateway:latest<br/>owns docker.sock"]
+    end
+
+    Data["/home/&lt;your_username&gt;/.hermes<br/>config, auth, skills, state"] -->|mounted at /opt/data| Hermes
+    Hermes -->|MCP<br/>http://mcp-gateway:8811/mcp| Gateway
+    Gateway -->|/var/run/docker.sock| Docker["Docker Engine"]
+    Gateway -->|dynamic tools| Catalog["Docker MCP catalog / profiles"]
+```
+
+- Hermes runs from `nousresearch/hermes-agent:latest`.
 - Docker MCP Gateway runs from `docker/mcp-gateway:latest`.
 - Hermes does not mount `/var/run/docker.sock`.
 - Docker MCP Gateway is the only service that holds `/var/run/docker.sock`.
@@ -12,17 +27,21 @@ Deployment wrapper for the official Hermes agent container with Docker MCP acces
 - Docker MCP Gateway starts with `--port=8811 --transport=streaming`.
 - Published ports bind to `127.0.0.1` by default.
 
-## Install
+## Configure
+
+Create `.env`:
 
 ```sh
-./install.sh
+cp .env.example .env
 ```
 
-## Port Overrides
+Edit `.env` before starting the stack. At minimum, set the data directory for your host user:
 
-`./install.sh` creates `.env` from `.env.example`. Before running `./run.sh`, edit `.env` if the default ports are already occupied, such as by an old `yui-gateway` container.
+```sh
+HERMES_DATA_DIR=/home/<your_username>/.hermes
+```
 
-Supported port overrides:
+If the default ports are already occupied, change these values:
 
 ```sh
 HERMES_GATEWAY_PORT=18642
@@ -30,13 +49,25 @@ HERMES_DASHBOARD_PORT=19119
 MCP_GATEWAY_PORT=18811
 ```
 
+## Install
+
+```sh
+./install.sh
+```
+
 ## First-Time Hermes Setup
 
 Run setup once before starting the compose deployment:
 
 ```sh
-docker run -it --rm -v /home/ubuntu/.hermes:/opt/data -e HERMES_UID=10000 -e HERMES_GID=10000 nousresearch/hermes-agent:latest setup
+docker run -it --rm \
+  -v /home/<your_username>/.hermes:/opt/data \
+  -e HERMES_UID=10000 \
+  -e HERMES_GID=10000 \
+  nousresearch/hermes-agent:latest setup
 ```
+
+Use the same `HERMES_UID`, `HERMES_GID`, and `HERMES_DATA_DIR` values that you put in `.env`.
 
 ## Run
 
