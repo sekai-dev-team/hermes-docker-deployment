@@ -6,11 +6,11 @@ image: @PROFILE_MANAGER_IMAGE@
 longLived: true
 env:
   - name: PROFILE_ID
-    value: @PROFILE_ID@
+    value: "@PROFILE_ID@"
   - name: CATALOG_REF
-    value: @CATALOG_REF@
+    value: "@CATALOG_REF@"
   - name: ALLOWED_SERVERS
-    value: @ALLOWED_SERVERS@
+    value: "@ALLOWED_SERVERS@"
 volumes:
   - hermes-mcp-config:/root/.docker/mcp
 tools:
@@ -19,9 +19,9 @@ tools:
   - name: profile_show
     description: Show the managed Docker MCP profile.
   - name: profile_server_add
-    description: Add an allowlisted catalog server to the managed profile.
+    description: Add a configured catalog server to the managed profile.
   - name: profile_server_remove
-    description: Remove an allowlisted server from the managed profile.
+    description: Remove a configured catalog server from the managed profile.
   - name: catalog_list
     description: List Docker MCP catalogs available to the gateway.
   - name: catalog_pull_official

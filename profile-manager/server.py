@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 
 SERVER_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+PROTECTED_SERVERS = {"profile-manager"}
 
 
 class ProfileManagerError(ValueError):
@@ -52,7 +53,7 @@ class ProfileManager:
     def from_env(cls) -> "ProfileManager":
         allowed = {
             item.strip()
-            for item in os.environ.get("ALLOWED_SERVERS", "fetch").split(",")
+            for item in os.environ.get("ALLOWED_SERVERS", "*").split(",")
             if item.strip()
         }
         return cls(
@@ -74,7 +75,9 @@ class ProfileManager:
 
     def profile_server_remove(self, server: str) -> dict[str, str]:
         safe = self.validate_server_name(server)
-        if safe not in self.allowed_servers:
+        if safe in PROTECTED_SERVERS:
+            raise ProfileManagerError(f"server is protected and cannot be removed: {safe}")
+        if not self.is_allowed(safe):
             raise ProfileManagerError(f"server is not allowed: {safe}")
         result = self._run(["profile", "server", "remove", self.profile_id, safe])
         return {"profile": self.profile_id, "server": safe, **result}
@@ -87,9 +90,12 @@ class ProfileManager:
 
     def catalog_server_ref(self, server: str) -> str:
         safe = self.validate_server_name(server)
-        if safe not in self.allowed_servers:
+        if not self.is_allowed(safe):
             raise ProfileManagerError(f"server is not allowed: {safe}")
         return f"catalog://{self.catalog_ref}/{safe}"
+
+    def is_allowed(self, server: str) -> bool:
+        return "*" in self.allowed_servers or server in self.allowed_servers
 
     def validate_server_name(self, server: str) -> str:
         if not isinstance(server, str) or not SERVER_NAME_PATTERN.fullmatch(server):
@@ -173,8 +179,8 @@ class McpServer:
         return [
             {"name": "profile_list", "description": "List Docker MCP profiles.", "inputSchema": empty_schema},
             {"name": "profile_show", "description": "Show the managed Docker MCP profile.", "inputSchema": empty_schema},
-            {"name": "profile_server_add", "description": "Add an allowlisted catalog server to the managed profile.", "inputSchema": server_schema},
-            {"name": "profile_server_remove", "description": "Remove an allowlisted server from the managed profile.", "inputSchema": server_schema},
+            {"name": "profile_server_add", "description": "Add a configured catalog server to the managed profile.", "inputSchema": server_schema},
+            {"name": "profile_server_remove", "description": "Remove a configured catalog server from the managed profile.", "inputSchema": server_schema},
             {"name": "catalog_list", "description": "List Docker MCP catalogs available to the gateway.", "inputSchema": empty_schema},
             {"name": "catalog_pull_official", "description": "Pull the configured official Docker MCP catalog.", "inputSchema": empty_schema},
         ]

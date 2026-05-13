@@ -31,6 +31,41 @@ class ProfileManagerSecurityTest(unittest.TestCase):
         with self.assertRaisesRegex(server.ProfileManagerError, "not allowed"):
             self.manager.catalog_server_ref("sqlite")
 
+    def test_wildcard_allows_any_short_catalog_server_name(self):
+        manager = server.ProfileManager(
+            profile_id="hermes-default",
+            catalog_ref="mcp/docker-mcp-catalog:latest",
+            allowed_servers={"*"},
+            runner=lambda args: server.CommandResult(0, "ok", ""),
+        )
+
+        self.assertEqual(
+            manager.catalog_server_ref("sqlite"),
+            "catalog://mcp/docker-mcp-catalog:latest/sqlite",
+        )
+
+    def test_wildcard_still_rejects_docker_refs(self):
+        manager = server.ProfileManager(
+            profile_id="hermes-default",
+            catalog_ref="mcp/docker-mcp-catalog:latest",
+            allowed_servers={"*"},
+            runner=lambda args: server.CommandResult(0, "ok", ""),
+        )
+
+        with self.assertRaises(server.ProfileManagerError):
+            manager.catalog_server_ref("docker://evil/image:latest")
+
+    def test_cannot_remove_profile_manager(self):
+        manager = server.ProfileManager(
+            profile_id="hermes-default",
+            catalog_ref="mcp/docker-mcp-catalog:latest",
+            allowed_servers={"*"},
+            runner=lambda args: server.CommandResult(0, "removed", ""),
+        )
+
+        with self.assertRaisesRegex(server.ProfileManagerError, "protected"):
+            manager.profile_server_remove("profile-manager")
+
     def test_rejects_docker_ref_instead_of_short_name(self):
         with self.assertRaises(server.ProfileManagerError):
             self.manager.catalog_server_ref("docker://evil/image:latest")

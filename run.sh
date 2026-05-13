@@ -8,6 +8,23 @@ if [ ! -f .env ]; then
   echo "Created .env from .env.example"
 fi
 
+while IFS= read -r line; do
+  case "$line" in
+    ""|\#*) continue ;;
+  esac
+  key=${line%%=*}
+  if ! grep -q "^${key}=" .env; then
+    printf '%s\n' "$line" >>.env
+    echo "Added missing .env setting: $key"
+  fi
+done <.env.example
+
+if grep -q '^HERMES_DATA_DIR=/home/<your_username>/.hermes$' .env; then
+  default_data_dir="/home/$(id -un)/.hermes"
+  sed -i "s|^HERMES_DATA_DIR=.*|HERMES_DATA_DIR=${default_data_dir}|" .env
+  echo "Set HERMES_DATA_DIR to $default_data_dir"
+fi
+
 set -a
 # shellcheck disable=SC1091
 source .env
@@ -24,6 +41,10 @@ else
   exit 1
 fi
 
+"$PWD/scripts/init-profile.sh"
+"$PWD/scripts/install-yui-skill.sh"
+
+"${DOCKER_COMPOSE[@]}" up -d --force-recreate mcp-gateway
 "${DOCKER_COMPOSE[@]}" up -d
 "${DOCKER_COMPOSE[@]}" ps
 
@@ -33,14 +54,15 @@ GATEWAY_NAME=${MCP_GATEWAY_CONTAINER_NAME:-mcp-gateway}
 "${DOCKER[@]}" inspect -f '{{.State.Running}}' "$HERMES_NAME" | grep -qx true
 "${DOCKER[@]}" inspect -f '{{.State.Running}}' "$GATEWAY_NAME" | grep -qx true
 
+if "${DOCKER[@]}" exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" "$HERMES_NAME" sh -lc \
+  'cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp list | grep -q "docker-gateway"'; then
+  echo "Hermes MCP server already registered: docker-gateway"
+else
+  "${DOCKER[@]}" exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" "$HERMES_NAME" sh -lc \
+    "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url '${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}'"
+fi
+
 echo
 echo "Hermes gateway: http://127.0.0.1:${HERMES_GATEWAY_PORT:-8642}"
 echo "Hermes dashboard: http://127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}"
 echo "MCP Gateway: http://127.0.0.1:${MCP_GATEWAY_PORT:-8811}/mcp"
-echo
-echo "Manual Hermes MCP registration command:"
-printf 'docker exec --user "%s:%s" -it "%s" sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url '\''%s'\''"\n' \
-  "${HERMES_UID:-10000}" \
-  "${HERMES_GID:-10000}" \
-  "$HERMES_NAME" \
-  "${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}"
