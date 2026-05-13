@@ -30,8 +30,8 @@ fi
 HERMES_NAME=${HERMES_CONTAINER_NAME:-hermes}
 GATEWAY_NAME=${MCP_GATEWAY_CONTAINER_NAME:-mcp-gateway}
 
-"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$HERMES_NAME" | rg '^true$' >/dev/null
-"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$GATEWAY_NAME" | rg '^true$' >/dev/null
+"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$HERMES_NAME" | grep -qx true
+"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$GATEWAY_NAME" | grep -qx true
 
 echo
 echo "Hermes gateway: http://127.0.0.1:${HERMES_GATEWAY_PORT:-8642}"

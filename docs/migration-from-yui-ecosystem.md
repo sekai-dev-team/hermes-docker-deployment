@@ -29,6 +29,18 @@ The host-side MCP service and eco-plugin lifecycle from `yui-ecosystem` are inte
 | Eco-plugin install | Docker MCP Gateway Dynamic MCP or profile server add flow |
 | Hermes Docker control | Gateway-managed MCP tools; Hermes has no `docker.sock` |
 
+## Existing Hermes MCP Config Cleanup
+
+If you reuse an existing `/home/ubuntu/.hermes` data directory, remove stale MCP registrations from the old deployment before adding Docker MCP Gateway:
+
+```bash
+docker exec --user "1000:1000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp remove yui-ecosystem"
+docker exec --user "1000:1000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp remove sandbox-packages"
+docker exec --user "1000:1000" -it hermes sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://mcp-gateway:8811/mcp'"
+```
+
+The remove commands are safe to skip if those servers are not listed in `hermes mcp list`.
+
 ## Security Boundary
 
 Hermes must not receive `/var/run/docker.sock`. Direct Docker access belongs to Docker MCP Gateway and to explicitly enabled Gateway-managed tools.

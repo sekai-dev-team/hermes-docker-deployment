@@ -137,12 +137,12 @@ HERMES_GID=1000
 MCP_GATEWAY_CONTAINER_NAME=mcp-gateway
 MCP_GATEWAY_PORT=8811
 MCP_GATEWAY_TRANSPORT=streaming
-MCP_GATEWAY_URL=http://mcp-gateway:8811
+MCP_GATEWAY_URL=http://mcp-gateway:8811/mcp
 
 COMPOSE_PROJECT_NAME=hermes-docker-deployment
 ```
 
-If Task 1 proves a different transport or URL is required, use the verified values instead of `streaming` and `http://mcp-gateway:8811`.
+If Task 1 proves a different transport or URL is required, use the verified values instead of `streaming` and `http://mcp-gateway:8811/mcp`.
 
 - [ ] **Step 2: Create `docker-compose.yml`**
 
@@ -182,7 +182,7 @@ services:
       HERMES_DASHBOARD: "1"
       HERMES_UID: "${HERMES_UID:-1000}"
       HERMES_GID: "${HERMES_GID:-1000}"
-      MCP_GATEWAY_URL: "${MCP_GATEWAY_URL:-http://mcp-gateway:8811}"
+      MCP_GATEWAY_URL: "${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}"
     shm_size: "1g"
     mem_limit: "4g"
     cpus: "2.0"
@@ -364,14 +364,14 @@ fi
 HERMES_NAME="${HERMES_CONTAINER_NAME:-hermes}"
 GATEWAY_NAME="${MCP_GATEWAY_CONTAINER_NAME:-mcp-gateway}"
 
-"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$HERMES_NAME" | rg '^true$' >/dev/null
-"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$GATEWAY_NAME" | rg '^true$' >/dev/null
+"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$HERMES_NAME" | grep -qx true
+"${DOCKER[@]}" inspect -f '{{.State.Running}}' "$GATEWAY_NAME" | grep -qx true
 
 echo
 echo "Hermes and Docker MCP Gateway are running."
 echo "Hermes gateway:   http://127.0.0.1:${HERMES_GATEWAY_PORT:-8642}"
 echo "Hermes dashboard: http://127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}"
-echo "MCP Gateway:      http://127.0.0.1:${MCP_GATEWAY_PORT:-8811}"
+echo "MCP Gateway:      http://127.0.0.1:${MCP_GATEWAY_PORT:-8811}/mcp"
 echo
 echo "If Hermes MCP registration was not automated during implementation,"
 echo "register the Docker MCP Gateway inside Hermes using the verified Hermes CLI command from README.md."
@@ -636,7 +636,7 @@ docker exec hermes sh -lc 'kill 1' || true
 sleep 8
 after="$(docker inspect hermes --format '{{.State.StartedAt}}')"
 test "$before" != "$after"
-docker inspect hermes --format '{{.State.Running}}' | rg '^true$' >/dev/null
+docker inspect hermes --format '{{.State.Running}}' | grep -qx true
 ```
 
 Expected: `StartedAt` changes and Hermes is running.
