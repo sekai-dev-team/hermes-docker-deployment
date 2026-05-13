@@ -18,6 +18,18 @@ Deployment wrapper for the official Hermes agent container with Docker MCP acces
 ./install.sh
 ```
 
+## Port Overrides
+
+`./install.sh` creates `.env` from `.env.example`. Before running `./run.sh`, edit `.env` if the default ports are already occupied, such as by an old `yui-gateway` container.
+
+Supported port overrides:
+
+```sh
+HERMES_GATEWAY_PORT=18642
+HERMES_DASHBOARD_PORT=19119
+MCP_GATEWAY_PORT=18811
+```
+
 ## First-Time Hermes Setup
 
 Run setup once before starting the compose deployment:
