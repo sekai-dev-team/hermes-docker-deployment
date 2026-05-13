@@ -10,19 +10,24 @@ flowchart TB
 
     subgraph Compose["Docker Compose project"]
         Hermes["hermes<br/>nousresearch/hermes-agent:latest<br/>no docker.sock"]
-        Gateway["mcp-gateway<br/>docker/mcp-gateway:latest<br/>owns docker.sock"]
-        ProfileManager["profile-manager<br/>restricted profile admin<br/>no docker.sock"]
-        Skill["docker-mcp-gateway-profile-manager skill<br/>installed into Hermes data dir"]
+        Gateway["mcp-gateway<br/>docker/mcp-gateway:latest<br/>only service with docker.sock"]
+        ProfileManager["profile-manager<br/>restricted profile admin MCP server<br/>no docker.sock"]
+        Fetch["fetch and other official MCP servers<br/>started by Gateway from profile"]
     end
 
     Data["/home/&lt;your_username&gt;/.hermes<br/>config, auth, skills, state"] -->|mounted at /opt/data| Hermes
-    Data --> Skill
-    McpConfig["hermes-mcp-config volume<br/>Docker MCP profiles/catalogs"] --> Gateway
+
+    McpConfig["hermes-mcp-config Docker volume<br/>Docker MCP profiles / catalogs"] --> Gateway
     McpConfig --> ProfileManager
-    Hermes -->|MCP<br/>http://mcp-gateway:8811/mcp| Gateway
+
+    Hermes -->|MCP HTTP<br/>http://mcp-gateway:8811/mcp| Gateway
+
     Gateway -->|/var/run/docker.sock| Docker["Docker Engine"]
-    Gateway -->|dynamic tools| Catalog["Docker MCP catalog / profiles"]
-    Gateway -->|starts MCP server| ProfileManager
+    Gateway -->|reads profile / catalog| McpConfig
+    Gateway -->|starts MCP server container| ProfileManager
+    Gateway -->|starts MCP server container| Fetch
+
+    ProfileManager -->|restricted profile edits<br/>short catalog server names only| McpConfig
 ```
 
 - Hermes runs from `nousresearch/hermes-agent:latest`.
@@ -35,6 +40,16 @@ flowchart TB
 - `profile-manager` is a restricted MCP server for profile edits. It accepts short catalog server names only and does not receive `/var/run/docker.sock`.
 - The bundled Hermes skill teaches the agent how to use Gateway, catalogs, profiles, and profile-manager safely.
 - Published ports bind to `127.0.0.1` by default.
+
+## Features
+
+- Everything-in-Docker deployment: Hermes, Docker MCP Gateway, profile-manager, and official MCP servers all run as containers.
+- Minimal host requirements: Docker Engine with Compose support and a persistent Hermes data directory.
+- Docker socket isolation: Hermes and profile-manager do not mount `/var/run/docker.sock`; only Docker MCP Gateway owns Docker access.
+- Persistent Docker MCP profile: catalogs and profiles live in the `hermes-mcp-config` Docker volume and survive container recreation.
+- Native tool schema path: Gateway loads profile servers and exposes their MCP tools to Hermes through one `docker-gateway` MCP endpoint.
+- Agent-manageable profiles: the bundled `profile-manager` lets Hermes/Yui add or remove catalog servers through restricted MCP tools.
+- Reproducible setup: `install.sh` and `run.sh` cover the profile-manager image build, profile initialization, skill installation, Gateway startup, and Hermes MCP registration.
 
 ## Configure
 
@@ -97,6 +112,20 @@ Use the same `HERMES_UID`, `HERMES_GID`, and `HERMES_DATA_DIR` values that you p
 ```
 
 The run script refreshes the Docker MCP profile, installs or updates the Hermes skill, starts the compose stack, and registers the `docker-gateway` MCP server inside Hermes if it is missing.
+
+## Scripts
+
+The scripts in `scripts/` are part of the deployment flow and are intentionally tracked:
+
+- `scripts/init-profile.sh` builds `profile-manager`, generates the local catalog entry, pulls the Docker MCP catalog, and writes `profile-manager` into the persistent profile.
+- `scripts/install-yui-skill.sh` installs the Docker MCP Gateway operation skill into `${HERMES_DATA_DIR}`.
+
+Generated local files are ignored instead:
+
+- `.env`
+- `catalog/profile-manager.generated.yaml`
+- `docs/`
+- Python cache files
 
 ## Register Docker MCP Gateway
 
