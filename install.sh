@@ -27,6 +27,21 @@ if grep -q '^HERMES_DATA_DIR=/home/<your_username>/.hermes$' .env; then
   echo "Set HERMES_DATA_DIR to $default_data_dir"
 fi
 
+if grep -q '^HERMES_IMAGE=nousresearch/hermes-agent:latest$' .env; then
+  sed -i 's|^HERMES_IMAGE=.*|HERMES_IMAGE=local/hermes-agent-docker-cli:latest|' .env
+  echo "Updated HERMES_IMAGE for the Docker CLI-enabled Hermes image"
+fi
+
+if grep -Eq '^MCP_GATEWAY_URL=http://(mcp-gateway|yui-docker):8811/mcp$' .env; then
+  sed -i 's|^MCP_GATEWAY_URL=.*|MCP_GATEWAY_URL=http://inner-docker:8811/mcp|' .env
+  echo "Updated MCP_GATEWAY_URL for the inner L2 Gateway"
+fi
+
+if grep -q '^YUI_DOCKER_IMAGE=docker:27-dind-rootless$' .env; then
+  sed -i 's|^YUI_DOCKER_IMAGE=.*|YUI_DOCKER_IMAGE=docker:27-dind|' .env
+  echo "Updated legacy YUI_DOCKER_IMAGE to the supported DinD image"
+fi
+
 set -a
 # shellcheck disable=SC1091
 source .env
@@ -46,14 +61,14 @@ fi
 SCRIPTS=(install.sh)
 [ -f run.sh ] && SCRIPTS+=(run.sh)
 [ -f scripts/init-profile.sh ] && SCRIPTS+=(scripts/init-profile.sh)
-[ -f scripts/install-yui-skill.sh ] && SCRIPTS+=(scripts/install-yui-skill.sh)
+[ -f scripts/install-hermes-skill.sh ] && SCRIPTS+=(scripts/install-hermes-skill.sh)
 for script in "${SCRIPTS[@]}"; do
   bash -n "$script"
 done
 
 "${DOCKER_COMPOSE[@]}" config >/dev/null
 "$PWD/scripts/init-profile.sh"
-"$PWD/scripts/install-yui-skill.sh"
+"$PWD/scripts/install-hermes-skill.sh"
 
 echo "Hermes Docker deployment installed."
 echo "For first-time Hermes setup, run:"
@@ -62,6 +77,6 @@ printf '%s run -it --rm -v %s:/opt/data -e HERMES_UID=%s -e HERMES_GID=%s %s set
   "${HERMES_DATA_DIR:-/home/<your_username>/.hermes}" \
   "${HERMES_UID:-10000}" \
   "${HERMES_GID:-10000}" \
-  "${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
+  "${HERMES_IMAGE:-local/hermes-agent-docker-cli:latest}"
 echo "Then start Hermes with:"
 echo "./run.sh"

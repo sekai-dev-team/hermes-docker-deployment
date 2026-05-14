@@ -3,3 +3,4 @@ docs/
 catalog/*.generated.yaml
 __pycache__/
 *.pyc
+logs/

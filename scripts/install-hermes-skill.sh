@@ -31,4 +31,4 @@ else
   exit 1
 fi
 
-echo "Installed Yui skill: $TARGET_DIR/SKILL.md"
+echo "Installed Hermes skill: $TARGET_DIR/SKILL.md"

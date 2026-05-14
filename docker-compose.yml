@@ -1,38 +1,42 @@
 services:
-  mcp-gateway:
-    image: ${MCP_GATEWAY_IMAGE:-docker/mcp-gateway:latest}
-    container_name: ${MCP_GATEWAY_CONTAINER_NAME:-mcp-gateway}
+  inner-docker:
+    image: ${INNER_DOCKER_IMAGE:-docker:27-dind}
+    container_name: ${INNER_DOCKER_CONTAINER_NAME:-inner-docker}
     restart: unless-stopped
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    expose:
+      - "2375"
+      - "8811"
     ports:
       - "127.0.0.1:${MCP_GATEWAY_PORT:-8811}:8811"
+      - "127.0.0.1:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - hermes-mcp-config:/root/.docker/mcp
+      - inner-docker-data:/var/lib/docker
       - ./catalog:/catalog:ro
-    command:
-      - --port=8811
-      - --transport=${MCP_GATEWAY_TRANSPORT:-streaming}
-      - --profile=${MCP_GATEWAY_PROFILE:-hermes-default}
-      - --watch
+      - ./profile-manager:/profile-manager:ro
     healthcheck:
       test:
         - CMD-SHELL
-        - wget -S --timeout=2 --tries=1 -O /dev/null http://localhost:8811/mcp 2>&1 | grep -q 'HTTP/'
+        - docker -H tcp://127.0.0.1:2375 info >/dev/null 2>&1
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - hermes-mcp
 
   hermes:
-    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    build:
+      context: ./hermes
+    image: ${HERMES_IMAGE:-local/hermes-agent-docker-cli:latest}
     container_name: ${HERMES_CONTAINER_NAME:-hermes}
     init: true
     restart: always
     command: gateway run
     depends_on:
-      mcp-gateway:
+      inner-docker:
         condition: service_healthy
     ports:
       - "127.0.0.1:${HERMES_GATEWAY_PORT:-8642}:8642"
@@ -43,24 +47,17 @@ services:
       HERMES_DASHBOARD: "1"
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
-      MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}
+      DOCKER_HOST: ${INNER_DOCKER_HOST:-tcp://inner-docker:2375}
+      MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://inner-docker:8811/mcp}
     shm_size: 1g
     mem_limit: 4g
     cpus: 2.0
     networks:
       - hermes-mcp
 
-  profile-manager:
-    build:
-      context: ./profile-manager
-    image: ${PROFILE_MANAGER_IMAGE:-local/hermes-profile-manager:latest}
-    profiles:
-      - build-only
-
 networks:
   hermes-mcp:
 
 volumes:
-  hermes-mcp-config:
-    name: hermes-mcp-config
-    external: true
+  inner-docker-data:
+    name: ${INNER_DOCKER_DATA_VOLUME:-inner-docker-data}

@@ -12,14 +12,15 @@ Use this skill when the user asks about Docker MCP Gateway tools, catalogs, prof
 - Catalog: the server directory. It answers "what MCP servers exist?"
 - Profile: the persistent enabled-server list. It answers "what should Gateway load at startup?"
 - MCP server: the container/service that provides actual tools, such as `fetch`.
-- Docker MCP Gateway: the single MCP endpoint Hermes connects to. It reads the active profile, starts the selected MCP servers, merges their tool schemas, and exposes them to Hermes.
+- Docker MCP Gateway: the single MCP endpoint Hermes connects to. In this deployment it runs inside the inner L2 Docker daemon. It reads the active profile, starts the selected MCP servers, merges their tool schemas, and exposes them to Hermes.
 - Profile manager: a restricted MCP server loaded by Gateway. It edits the managed profile without giving Hermes direct Docker socket access.
+- L2 Docker: Hermes has Docker CLI access to `DOCKER_HOST=tcp://inner-docker:2375`. This is the inner Docker daemon, not the host Docker daemon.
 
 ## Safety Boundary
 
-Prefer `profile_*` tools for persistent installs. They only accept short catalog server names such as `fetch` or `aks`.
+Prefer `profile_*` tools for persistent installs. Catalog tools only accept short catalog server names such as `fetch` or `aks`.
 
-Do not ask for or pass full refs such as `docker://...`, `file://...`, arbitrary images, paths, volumes, or environment variables. The profile manager builds fixed official-catalog refs internally.
+Use `profile_server_add_image` and `profile_server_remove_image` for Docker Hub MCP server images. Do not ask for or pass `file://...`, paths, volumes, or environment variables. `docker://` image installs are allowed because Gateway and MCP servers run inside L2 Docker.
 
 The deployment may allow `PROFILE_MANAGER_ALLOWED_SERVERS=*`. This means "any valid short server name from the configured catalog", not arbitrary Docker images or local files.
 
@@ -34,7 +35,9 @@ Persistent management tools:
 - `profile_list`: list profiles.
 - `profile_show`: show the managed profile and enabled servers.
 - `profile_server_add`: add a short-name server to the persistent profile.
+- `profile_server_add_image`: add a Docker image MCP server to the persistent profile.
 - `profile_server_remove`: remove a short-name server from the persistent profile.
+- `profile_server_remove_image`: remove a Docker image MCP server from the persistent profile.
 
 Dynamic Gateway tools:
 
@@ -59,12 +62,13 @@ Other Gateway tools:
    - Use `profile_show` to see what is already persistent.
 3. Install:
    - Use `profile_server_add` with a short server name, for example `server="fetch"`.
+   - For a Docker Hub MCP server image, use `profile_server_add_image` with `image="owner/server:tag"`.
 4. Confirm:
    - Use `profile_show` again.
 5. Refresh visibility:
    - Gateway runs with `--watch`, so profile changes may reload automatically.
-   - Tool schema in the current Hermes/Yui run may not refresh immediately.
-   - If the new native tools are not visible, ask the user to restart Gateway and start a new Hermes/Yui run. For a stronger refresh, restart Hermes gateway too.
+   - Tool schema in the current Hermes agent run may not refresh immediately.
+   - If the new native tools are not visible, ask the user to restart Gateway and start a new Hermes agent run. For a stronger refresh, restart Hermes gateway too.
 
 ## Dynamic Exploration Workflow
 
@@ -74,7 +78,7 @@ Use dynamic tools when trying something temporarily:
 2. `mcp_add` to load it into the current Gateway session.
 3. `mcp_config_set` if it needs configuration.
 4. `mcp_exec` to call its tools.
-5. If the server is useful long-term, install it with `profile_server_add` so it survives restart.
+5. If the server is useful long-term, install it with `profile_server_add` or `profile_server_add_image` so it survives restart.
 
 ## Troubleshooting
 
@@ -83,6 +87,19 @@ If only Gateway meta tools are visible, check in order:
 1. `catalog_list` shows `mcp/docker-mcp-catalog:latest`.
 2. `profile_show` includes `profile-manager` and the expected server.
 3. Gateway has reloaded after the profile change.
-4. Hermes/Yui started a new run after Gateway reloaded, so the prompt contains the new tool schema.
+4. Hermes agent started a new run after Gateway reloaded, so the prompt contains the new tool schema.
 
 If `profile_server_add` fails, report the exact error. Common causes are an invalid short name, a server missing from the catalog, or a catalog that has not been pulled.
+
+## L2 Docker CLI
+
+Use terminal Docker commands for ordinary container deployment and for recovering the inner Gateway:
+
+```bash
+docker ps
+docker logs mcp-gateway
+docker restart mcp-gateway
+docker run -d --name agent-app-demo -p 20080:8080 nginx:alpine
+```
+
+These commands target the inner L2 daemon through `DOCKER_HOST`; they must not use or request the host `/var/run/docker.sock`.

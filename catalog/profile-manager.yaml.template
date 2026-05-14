@@ -20,8 +20,12 @@ tools:
     description: Show the managed Docker MCP profile.
   - name: profile_server_add
     description: Add a configured catalog server to the managed profile.
+  - name: profile_server_add_image
+    description: Add a Docker image MCP server to the managed profile.
   - name: profile_server_remove
     description: Remove a configured catalog server from the managed profile.
+  - name: profile_server_remove_image
+    description: Remove a Docker image MCP server from the managed profile.
   - name: catalog_list
     description: List Docker MCP catalogs available to the gateway.
   - name: catalog_pull_official

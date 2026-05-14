@@ -105,6 +105,73 @@ class ProfileManagerSecurityTest(unittest.TestCase):
             ],
         )
 
+    def test_profile_add_image_uses_docker_ref(self):
+        calls = []
+
+        def runner(args):
+            calls.append(args)
+            return server.CommandResult(0, "added", "")
+
+        manager = server.ProfileManager(
+            profile_id="hermes-default",
+            catalog_ref="mcp/docker-mcp-catalog:latest",
+            allowed_servers={"*"},
+            runner=runner,
+        )
+
+        result = manager.profile_server_add_image("example/my-mcp:latest")
+
+        self.assertEqual(result["image"], "example/my-mcp:latest")
+        self.assertEqual(result["ref"], "docker://example/my-mcp:latest")
+        self.assertEqual(
+            calls,
+            [
+                [
+                    "profile",
+                    "server",
+                    "add",
+                    "hermes-default",
+                    "--server",
+                    "docker://example/my-mcp:latest",
+                ]
+            ],
+        )
+
+    def test_profile_add_image_rejects_file_uri(self):
+        with self.assertRaises(server.ProfileManagerError):
+            self.manager.profile_server_add_image("file:///catalog/evil.yaml")
+
+    def test_profile_remove_image_uses_docker_ref(self):
+        calls = []
+
+        def runner(args):
+            calls.append(args)
+            return server.CommandResult(0, "removed", "")
+
+        manager = server.ProfileManager(
+            profile_id="hermes-default",
+            catalog_ref="mcp/docker-mcp-catalog:latest",
+            allowed_servers={"*"},
+            runner=runner,
+        )
+
+        result = manager.profile_server_remove_image("example/my-mcp:latest")
+
+        self.assertEqual(result["image"], "example/my-mcp:latest")
+        self.assertEqual(result["ref"], "docker://example/my-mcp:latest")
+        self.assertEqual(
+            calls,
+            [
+                [
+                    "profile",
+                    "server",
+                    "remove",
+                    "hermes-default",
+                    "docker://example/my-mcp:latest",
+                ]
+            ],
+        )
+
     def test_json_rpc_tools_list_contains_only_safe_tools(self):
         response = server.McpServer(self.manager).handle(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
@@ -117,7 +184,9 @@ class ProfileManagerSecurityTest(unittest.TestCase):
                 "profile_list",
                 "profile_show",
                 "profile_server_add",
+                "profile_server_add_image",
                 "profile_server_remove",
+                "profile_server_remove_image",
                 "catalog_list",
                 "catalog_pull_official",
             ],

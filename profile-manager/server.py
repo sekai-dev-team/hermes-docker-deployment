@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 
 SERVER_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+IMAGE_REF_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}$")
 PROTECTED_SERVERS = {"profile-manager"}
 
 
@@ -73,6 +74,12 @@ class ProfileManager:
         result = self._run(["profile", "server", "add", self.profile_id, "--server", ref])
         return {"profile": self.profile_id, "server": server, "ref": ref, **result}
 
+    def profile_server_add_image(self, image: str) -> dict[str, str]:
+        safe = self.validate_image_ref(image)
+        ref = f"docker://{safe}"
+        result = self._run(["profile", "server", "add", self.profile_id, "--server", ref])
+        return {"profile": self.profile_id, "image": safe, "ref": ref, **result}
+
     def profile_server_remove(self, server: str) -> dict[str, str]:
         safe = self.validate_server_name(server)
         if safe in PROTECTED_SERVERS:
@@ -81,6 +88,12 @@ class ProfileManager:
             raise ProfileManagerError(f"server is not allowed: {safe}")
         result = self._run(["profile", "server", "remove", self.profile_id, safe])
         return {"profile": self.profile_id, "server": safe, **result}
+
+    def profile_server_remove_image(self, image: str) -> dict[str, str]:
+        safe = self.validate_image_ref(image)
+        ref = f"docker://{safe}"
+        result = self._run(["profile", "server", "remove", self.profile_id, ref])
+        return {"profile": self.profile_id, "image": safe, "ref": ref, **result}
 
     def catalog_list(self) -> dict[str, str]:
         return self._run(["catalog", "list"])
@@ -101,6 +114,13 @@ class ProfileManager:
         if not isinstance(server, str) or not SERVER_NAME_PATTERN.fullmatch(server):
             raise ProfileManagerError(f"invalid server name: {server!r}")
         return server
+
+    def validate_image_ref(self, image: str) -> str:
+        if not isinstance(image, str) or "://" in image or not IMAGE_REF_PATTERN.fullmatch(image):
+            raise ProfileManagerError(f"invalid image ref: {image!r}")
+        if image.startswith("/") or "/../" in image or image.endswith("/.."):
+            raise ProfileManagerError(f"invalid image ref: {image!r}")
+        return image
 
     def _run(self, args: list[str]) -> dict[str, str]:
         result = self.runner(args)
@@ -155,8 +175,12 @@ class McpServer:
             return self.manager.profile_show()
         if name == "profile_server_add":
             return self.manager.profile_server_add(self._server_arg(arguments))
+        if name == "profile_server_add_image":
+            return self.manager.profile_server_add_image(self._image_arg(arguments))
         if name == "profile_server_remove":
             return self.manager.profile_server_remove(self._server_arg(arguments))
+        if name == "profile_server_remove_image":
+            return self.manager.profile_server_remove_image(self._image_arg(arguments))
         if name == "catalog_list":
             return self.manager.catalog_list()
         if name == "catalog_pull_official":
@@ -169,18 +193,31 @@ class McpServer:
             raise ProfileManagerError("tool requires non-empty string argument: server")
         return server
 
+    def _image_arg(self, arguments: dict[str, Any]) -> str:
+        image = arguments.get("image")
+        if not isinstance(image, str) or not image:
+            raise ProfileManagerError("tool requires non-empty string argument: image")
+        return image
+
     def _tools(self) -> list[dict[str, Any]]:
         server_schema = {
             "type": "object",
             "properties": {"server": {"type": "string", "description": "Allowed short server name, such as fetch."}},
             "required": ["server"],
         }
+        image_schema = {
+            "type": "object",
+            "properties": {"image": {"type": "string", "description": "Docker image reference for an MCP server, such as owner/server:latest."}},
+            "required": ["image"],
+        }
         empty_schema = {"type": "object", "properties": {}}
         return [
             {"name": "profile_list", "description": "List Docker MCP profiles.", "inputSchema": empty_schema},
             {"name": "profile_show", "description": "Show the managed Docker MCP profile.", "inputSchema": empty_schema},
             {"name": "profile_server_add", "description": "Add a configured catalog server to the managed profile.", "inputSchema": server_schema},
+            {"name": "profile_server_add_image", "description": "Add a Docker image MCP server to the managed profile.", "inputSchema": image_schema},
             {"name": "profile_server_remove", "description": "Remove a configured catalog server from the managed profile.", "inputSchema": server_schema},
+            {"name": "profile_server_remove_image", "description": "Remove a Docker image MCP server from the managed profile.", "inputSchema": image_schema},
             {"name": "catalog_list", "description": "List Docker MCP catalogs available to the gateway.", "inputSchema": empty_schema},
             {"name": "catalog_pull_official", "description": "Pull the configured official Docker MCP catalog.", "inputSchema": empty_schema},
         ]

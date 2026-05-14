@@ -1,55 +1,99 @@
 # Hermes Docker Deployment
 
-Docker Compose deployment for the official Hermes agent container with Docker MCP access routed through Docker MCP Gateway.
+Docker Compose deployment for the official Hermes agent container with Docker MCP access routed through Docker MCP Gateway and an inner Docker daemon.
+
+## Quick Start
+
+```sh
+cp .env.example .env
+```
+
+Edit `.env` and set:
+
+```sh
+HERMES_DATA_DIR=/home/<your_username>/.hermes
+```
+
+Run Hermes setup once if this data directory has not been initialized:
+
+```sh
+docker run -it --rm \
+  -v /home/<your_username>/.hermes:/opt/data \
+  -e HERMES_UID=10000 \
+  -e HERMES_GID=10000 \
+  nousresearch/hermes-agent:latest setup
+```
+
+Deploy the full stack and run the real smoke test:
+
+```sh
+./deploy.sh
+```
+
+`deploy.sh` starts the stack, registers Docker MCP Gateway in Hermes, then runs `scripts/real-smoke-test.sh`. The smoke test includes a real Hermes agent prompt through `scripts/ask-yui.sh`; success prints:
+
+```text
+HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK
+```
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    User["User / client"] -->|Hermes gateway / dashboard| Hermes
+    User["User / client"] -->|gateway 8642<br/>dashboard 9119| Hermes
 
-    subgraph Compose["Docker Compose project"]
-        Hermes["hermes<br/>nousresearch/hermes-agent:latest<br/>no docker.sock"]
-        Gateway["mcp-gateway<br/>docker/mcp-gateway:latest<br/>only service with docker.sock"]
-        ProfileManager["profile-manager<br/>restricted profile admin MCP server<br/>no docker.sock"]
-        Fetch["fetch and other official MCP servers<br/>started by Gateway from profile"]
+    subgraph Compose["Host Docker Compose project"]
+        Hermes["hermes<br/>Hermes Agent + Docker CLI<br/>no host docker.sock"]
+        InnerDocker["inner-docker<br/>docker:27-dind<br/>privileged L2 Docker daemon"]
     end
 
-    Data["/home/&lt;your_username&gt;/.hermes<br/>config, auth, skills, state"] -->|mounted at /opt/data| Hermes
+    HermesData[("host path<br/>/home/&lt;your_username&gt;/.hermes<br/>config / auth / skills / sessions")] -->|/opt/data| Hermes
+    InnerDockerData[("host Docker volume<br/>inner-docker-data<br/>L2 images / containers / volumes")] -->|/var/lib/docker| InnerDocker
 
-    McpConfig["hermes-mcp-config Docker volume<br/>Docker MCP profiles / catalogs"] --> Gateway
-    McpConfig --> ProfileManager
+    subgraph L2["Inside inner-docker / L2 Docker daemon"]
+        Gateway["mcp-gateway<br/>docker/mcp-gateway:latest<br/>streaming MCP on 8811"]
+        ProfileManager["profile-manager<br/>restricted profile admin MCP server"]
+        McpServers["official MCP servers<br/>fetch, github, ..."]
+        DockerMcpImages["docker:// MCP server images<br/>from Docker Hub"]
+        Workloads["ordinary containers<br/>deployed by the agent"]
+        McpConfig[("L2 Docker volume<br/>hermes-mcp-config<br/>profiles / catalogs")]
+    end
 
-    Hermes -->|MCP HTTP<br/>http://mcp-gateway:8811/mcp| Gateway
+    Hermes -->|Docker CLI<br/>DOCKER_HOST=tcp://inner-docker:2375| InnerDocker
+    Hermes -->|MCP HTTP<br/>http://inner-docker:8811/mcp| Gateway
 
-    Gateway -->|/var/run/docker.sock| Docker["Docker Engine"]
+    Gateway -->|L2 /var/run/docker.sock| InnerDocker
     Gateway -->|reads profile / catalog| McpConfig
     Gateway -->|starts MCP server container| ProfileManager
-    Gateway -->|starts MCP server container| Fetch
+    Gateway -->|starts MCP server container| McpServers
+    Gateway -->|starts MCP server container| DockerMcpImages
+    InnerDocker -->|publishes 127.0.0.1:20000-20100| Workloads
 
-    ProfileManager -->|restricted profile edits<br/>short catalog server names only| McpConfig
+    ProfileManager -->|persistent profile edits<br/>catalog short names + docker:// images| McpConfig
 ```
 
-- Hermes runs from `nousresearch/hermes-agent:latest`.
-- Docker MCP Gateway runs from `docker/mcp-gateway:latest`.
-- Hermes does not mount `/var/run/docker.sock`.
-- Docker MCP Gateway is the only service that holds `/var/run/docker.sock`.
-- Hermes connects to Docker MCP Gateway over the compose network at `http://mcp-gateway:8811/mcp`.
+- Hermes runs from a thin local image based on `nousresearch/hermes-agent:latest` with Docker CLI added.
+- Hermes does not mount the host `/var/run/docker.sock`.
+- Hermes Docker CLI points to the inner L2 Docker daemon at `tcp://inner-docker:2375`.
+- `inner-docker` is a privileged DinD container. It isolates Hermes from the host Docker socket, but it is still privileged at the host container boundary.
+- Docker MCP Gateway runs inside the L2 Docker daemon, not as a host Docker Compose service.
+- Hermes connects to Docker MCP Gateway over the compose network at `http://inner-docker:8811/mcp`.
 - Docker MCP Gateway starts with `--port=8811 --transport=streaming --profile=hermes-default`.
-- Docker MCP profiles and catalogs live in the `hermes-mcp-config` Docker volume.
-- `profile-manager` is a restricted MCP server for profile edits. It accepts short catalog server names only and does not receive `/var/run/docker.sock`.
-- The bundled Hermes skill teaches the agent how to use Gateway, catalogs, profiles, and profile-manager safely.
-- Published ports bind to `127.0.0.1` by default.
+- Docker MCP profiles and catalogs live in the L2 `hermes-mcp-config` Docker volume.
+- `profile-manager`, `fetch`, `docker://` MCP servers, and agent-deployed ordinary containers all run inside L2 Docker.
+- The bundled Hermes skill teaches the agent how to use Gateway, catalogs, profiles, Docker image MCP servers, and L2 Docker safely.
+- Published ports bind to `127.0.0.1` by default: Hermes `8642`, dashboard `9119`, Gateway `8811`, workload range `20000-20100`.
 
 ## Features
 
-- Everything-in-Docker deployment: Hermes, Docker MCP Gateway, profile-manager, and official MCP servers all run as containers.
+- Everything-in-Docker deployment: Hermes runs in host Docker; Docker MCP Gateway, profile-manager, official MCP servers, `docker://` MCP servers, and agent workloads run in an inner L2 Docker daemon.
 - Minimal host requirements: Docker Engine with Compose support and a persistent Hermes data directory.
-- Docker socket isolation: Hermes and profile-manager do not mount `/var/run/docker.sock`; only Docker MCP Gateway owns Docker access.
-- Persistent Docker MCP profile: catalogs and profiles live in the `hermes-mcp-config` Docker volume and survive container recreation.
-- Native tool schema path: Gateway loads profile servers and exposes their MCP tools to Hermes through one `docker-gateway` MCP endpoint.
-- Agent-manageable profiles: the bundled `profile-manager` lets Hermes/Yui add or remove catalog servers through restricted MCP tools.
-- Reproducible setup: `install.sh` and `run.sh` cover the profile-manager image build, profile initialization, skill installation, Gateway startup, and Hermes MCP registration.
+- Host Docker isolation: Hermes never receives the host Docker socket. Its Docker CLI talks only to the inner L2 Docker daemon.
+- Persistent L2 Docker state: inner Docker images, containers, volumes, and MCP profiles live in the `inner-docker-data` Docker volume.
+- Native tool schema path: Gateway loads profile servers inside L2 and exposes their MCP tools to Hermes through one `docker-gateway` MCP endpoint.
+- Agent-manageable profiles: the bundled `profile-manager` lets Hermes agent add/remove catalog servers and add Docker image MCP servers through MCP tools.
+- L2 Docker CLI: The agent can deploy and manage ordinary containers in the inner Docker daemon without touching host Docker.
+- One-command deployment: `deploy.sh` covers inner Docker startup, profile-manager image build, profile initialization, skill installation, Gateway startup, Hermes MCP registration, and a real agent smoke test.
 
 ## Configure
 
@@ -79,46 +123,32 @@ Optional profile settings:
 MCP_GATEWAY_PROFILE=hermes-default
 MCP_GATEWAY_CATALOG_REF=mcp/docker-mcp-catalog:latest
 PROFILE_MANAGER_ALLOWED_SERVERS=*
+INNER_WORKLOAD_PORT_START=20000
+INNER_WORKLOAD_PORT_END=20100
 ```
 
-Use `PROFILE_MANAGER_ALLOWED_SERVERS=*` to allow any valid short server name from the configured catalog. This still rejects arbitrary `docker://`, `file://`, path-like, and full URI inputs.
+Use `PROFILE_MANAGER_ALLOWED_SERVERS=*` to allow any valid short server name from the configured catalog. Docker image MCP servers are installed with `profile_server_add_image`. `file://`, path-like inputs, arbitrary volumes, and shell commands remain rejected.
 
-## Install
+## Deployment Commands
 
 ```sh
 ./install.sh
-```
-
-The installer creates or updates `.env`, validates the compose file, builds the restricted `profile-manager` image, generates `catalog/profile-manager.generated.yaml` from `.env`, pulls the official Docker MCP catalog into the `hermes-mcp-config` volume, creates the managed profile with `profile-manager` enabled, and installs the Hermes skill into `${HERMES_DATA_DIR}/skills/devops/docker-mcp-gateway-profile-manager`.
-
-## First-Time Hermes Setup
-
-Run setup once before starting the compose deployment:
-
-```sh
-docker run -it --rm \
-  -v /home/<your_username>/.hermes:/opt/data \
-  -e HERMES_UID=10000 \
-  -e HERMES_GID=10000 \
-  nousresearch/hermes-agent:latest setup
-```
-
-Use the same `HERMES_UID`, `HERMES_GID`, and `HERMES_DATA_DIR` values that you put in `.env`.
-
-## Run
-
-```sh
 ./run.sh
+./deploy.sh
 ```
 
-The run script refreshes the Docker MCP profile, installs or updates the Hermes skill, starts the compose stack, and registers the `docker-gateway` MCP server inside Hermes if it is missing.
+- `install.sh` prepares `.env`, validates shell/Compose files, starts `inner-docker`, builds `profile-manager` inside L2, initializes the persistent Docker MCP profile, starts the inner Gateway, and installs the Hermes skill.
+- `run.sh` refreshes the same deployment state, starts `hermes`, and non-interactively registers `docker-gateway` in Hermes with all Gateway tools enabled.
+- `deploy.sh` runs `run.sh` and then `scripts/real-smoke-test.sh`. This is the recommended command after first-time Hermes setup.
 
 ## Scripts
 
 The scripts in `scripts/` are part of the deployment flow and are intentionally tracked:
 
-- `scripts/init-profile.sh` builds `profile-manager`, generates the local catalog entry, pulls the Docker MCP catalog, and writes `profile-manager` into the persistent profile.
-- `scripts/install-yui-skill.sh` installs the Docker MCP Gateway operation skill into `${HERMES_DATA_DIR}`.
+- `scripts/init-profile.sh` starts `inner-docker`, builds `profile-manager` inside L2 Docker, generates the local catalog entry, pulls the Docker MCP catalog, writes `profile-manager` into the persistent profile, and starts the inner `mcp-gateway`.
+- `scripts/install-hermes-skill.sh` installs the Docker MCP Gateway operation skill into `${HERMES_DATA_DIR}`.
+- `scripts/ask-yui.sh` sends one prompt into the running Hermes container.
+- `scripts/real-smoke-test.sh` verifies host containers, L2 Docker, Gateway, Hermes MCP registration, and a real agent prompt that must return `HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK`.
 
 Generated local files are ignored instead:
 
@@ -132,10 +162,12 @@ Generated local files are ignored instead:
 `./run.sh` registers Docker MCP Gateway inside Hermes if `docker-gateway` is missing. To repair the registration manually, run:
 
 ```sh
-docker exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" -it "${HERMES_CONTAINER_NAME:-hermes}" sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://mcp-gateway:8811/mcp'"
+docker exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" -it "${HERMES_CONTAINER_NAME:-hermes}" sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://inner-docker:8811/mcp'"
 ```
 
 The Hermes CLI path inside the container is `/opt/hermes/.venv/bin/hermes`.
+
+`run.sh` performs this registration non-interactively by answering Hermes CLI prompts. It enables all tools exposed by Gateway.
 
 ## Manage Docker MCP Profile
 
@@ -144,11 +176,13 @@ The `profile-manager` MCP server gives Hermes a narrow profile-management surfac
 - `profile_list`
 - `profile_show`
 - `profile_server_add`
+- `profile_server_add_image`
 - `profile_server_remove`
+- `profile_server_remove_image`
 - `catalog_list`
 - `catalog_pull_official`
 
-`profile_server_add` and `profile_server_remove` accept short catalog server names only, such as `fetch` or `aks`. They do not accept `docker://`, `file://`, arbitrary images, volumes, environment variables, or shell commands.
+`profile_server_add` and `profile_server_remove` accept short catalog server names only, such as `fetch` or `aks`. `profile_server_add_image` and `profile_server_remove_image` accept Docker image references for MCP server images and manage them as `docker://...` entries inside L2 Docker. `file://`, arbitrary paths, volumes, environment variables, and shell commands are still rejected.
 
 By default, `.env.example` uses:
 
@@ -168,12 +202,24 @@ After changing profile settings, rerun:
 ./run.sh
 ```
 
-Gateway runs with `--watch`, but Hermes/Yui tool schemas are injected when a new run prompt is built. If newly installed tools are not visible, restart `mcp-gateway`, restart Hermes, and start a new Yui task.
+Gateway runs with `--watch`, but Hermes agent tool schemas are injected when a new run prompt is built. If newly installed tools are not visible, restart the inner `mcp-gateway`, restart Hermes, and start a new Hermes task.
+
+Hermes also has Docker CLI access to the inner L2 daemon:
+
+```sh
+docker ps
+docker logs mcp-gateway
+docker restart mcp-gateway
+docker run -d --name agent-app-demo -p 20080:8080 nginx:alpine
+```
+
+Those commands target `DOCKER_HOST=tcp://inner-docker:2375`, not the host Docker daemon.
 
 ## Logs
 
 ```sh
 docker compose logs -f
+docker compose exec inner-docker docker -H tcp://127.0.0.1:2375 logs -f mcp-gateway
 ```
 
 ## Stop
@@ -197,13 +243,13 @@ Docker Compose starts the Hermes container again because the service uses `resta
 ## Verification
 
 ```sh
-for script in install.sh run.sh; do bash -n "$script"; done
+for script in deploy.sh install.sh run.sh; do bash -n "$script"; done
 for script in scripts/*.sh; do bash -n "$script"; done
 docker compose config >/dev/null
-./install.sh
-./run.sh
+python3 -m unittest discover -s tests -v
+./deploy.sh
 docker compose ps
-docker compose exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" hermes sh -lc 'kill -TERM "$(pgrep -u "$(id -u)" -f "/opt/hermes/.venv/bin/hermes gateway run" | head -n 1)"'
-sleep 8
-docker compose ps
+docker compose exec inner-docker docker -H tcp://127.0.0.1:2375 ps
+docker compose exec inner-docker docker -H tcp://127.0.0.1:2375 logs --tail 80 mcp-gateway
+grep -q HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK logs/ask-yui-real-smoke.log
 ```
