@@ -33,6 +33,12 @@ class DeploymentScriptsTest(unittest.TestCase):
         self.assertIn("/opt/hermes/.venv/bin/hermes", body)
         self.assertIn("-z", body)
 
+    def test_hermes_image_includes_github_cli(self):
+        dockerfile = (ROOT / "hermes" / "Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("apt-get install", dockerfile)
+        self.assertIn(" gh", dockerfile)
+
 
 if __name__ == "__main__":
     unittest.main()
