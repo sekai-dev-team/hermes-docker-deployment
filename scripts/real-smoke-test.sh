@@ -40,7 +40,8 @@ echo "Checking L2 Docker and MCP Gateway..."
 "${DOCKER[@]}" exec "$INNER_DOCKER_NAME" docker -H tcp://127.0.0.1:2375 info >/dev/null
 "${DOCKER[@]}" exec "$INNER_DOCKER_NAME" docker -H tcp://127.0.0.1:2375 inspect -f '{{.State.Running}}' "$GATEWAY_NAME" | grep -qx true
 "${DOCKER[@]}" exec "$INNER_DOCKER_NAME" docker -H tcp://127.0.0.1:2375 volume ls --format '{{.Name}}' | grep -x hermes-mcp-config >/dev/null
-"${DOCKER[@]}" exec "$INNER_DOCKER_NAME" docker -H tcp://127.0.0.1:2375 logs --tail 120 "$GATEWAY_NAME" 2>&1 | grep -q 'profile-manager: ('
+gateway_logs="$("${DOCKER[@]}" exec "$INNER_DOCKER_NAME" docker -H tcp://127.0.0.1:2375 logs --tail 120 "$GATEWAY_NAME" 2>&1)"
+grep -q 'profile-manager: (' <<<"$gateway_logs"
 
 echo "Checking Hermes sees L2 Docker..."
 "${DOCKER[@]}" exec --user "$HERMES_USER" "$HERMES_NAME" sh -lc \
