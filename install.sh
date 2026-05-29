@@ -32,10 +32,7 @@ if grep -q '^HERMES_IMAGE=nousresearch/hermes-agent:latest$' .env; then
   echo "Updated HERMES_IMAGE for the Docker CLI-enabled Hermes image"
 fi
 
-if grep -Eq '^MCP_GATEWAY_URL=http://(mcp-gateway|yui-docker):8811/mcp$' .env; then
-  sed -i 's|^MCP_GATEWAY_URL=.*|MCP_GATEWAY_URL=http://inner-docker:8811/mcp|' .env
-  echo "Updated MCP_GATEWAY_URL for the inner L2 Gateway"
-fi
+# MCP Gateway was removed — Hermes connects directly via config.yaml
 
 if grep -q '^YUI_DOCKER_IMAGE=docker:27-dind-rootless$' .env; then
   sed -i 's|^YUI_DOCKER_IMAGE=.*|YUI_DOCKER_IMAGE=docker:27-dind|' .env
@@ -58,17 +55,12 @@ else
   exit 1
 fi
 
-SCRIPTS=(install.sh)
-[ -f run.sh ] && SCRIPTS+=(run.sh)
-[ -f scripts/init-profile.sh ] && SCRIPTS+=(scripts/init-profile.sh)
-[ -f scripts/install-hermes-skill.sh ] && SCRIPTS+=(scripts/install-hermes-skill.sh)
+SCRIPTS=(install.sh run.sh)
 for script in "${SCRIPTS[@]}"; do
   bash -n "$script"
 done
 
 "${DOCKER_COMPOSE[@]}" config >/dev/null
-"$PWD/scripts/init-profile.sh"
-"$PWD/scripts/install-hermes-skill.sh"
 
 echo "Hermes Docker deployment installed."
 echo "For first-time Hermes setup, run:"

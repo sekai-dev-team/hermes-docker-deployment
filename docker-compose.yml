@@ -8,14 +8,10 @@ services:
       DOCKER_TLS_CERTDIR: ""
     expose:
       - "2375"
-      - "8811"
     ports:
-      - "127.0.0.1:${MCP_GATEWAY_PORT:-8811}:8811"
       - "127.0.0.1:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}"
     volumes:
       - inner-docker-data:/var/lib/docker
-      - ./catalog:/catalog:ro
-      - ./profile-manager:/profile-manager:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -48,7 +44,6 @@ services:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
       DOCKER_HOST: ${INNER_DOCKER_HOST:-tcp://inner-docker:2375}
-      MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://inner-docker:8811/mcp}
     shm_size: 1g
     mem_limit: 4g
     cpus: 2.0

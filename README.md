@@ -1,6 +1,6 @@
 # Hermes Docker 部署项目
 
-基于 Docker Compose 的 [Hermes](https://github.com/nousresearch/hermes-agent) AI Agent 部署方案，使用 Docker-in-Docker 双层架构实现主机 Docker 隔离，并通过 Docker MCP Gateway 管理内部 MCP 服务。
+基于 Docker Compose 的 [Hermes](https://github.com/nousresearch/hermes-agent) AI Agent 部署方案，使用 Docker-in-Docker 双层架构实现主机 Docker 隔离。Hermes 通过 Docker CLI 直接管理内层 Docker 容器，并直接在 `config.yaml` 中注册 MCP 服务器。
 
 ## 目录
 
@@ -10,8 +10,7 @@
 - [配置说明](#配置说明)
 - [部署命令](#部署命令)
 - [脚本说明](#脚本说明)
-- [注册 Docker MCP Gateway](#注册-docker-mcp-gateway)
-- [管理 MCP 配置档案](#管理-mcp-配置档案)
+- [MCP 服务器注册](#mcp-服务器注册)
 - [在 Hermes 容器中使用 CLI](#在-hermes-容器中使用-cli)
 - [查看日志](#查看日志)
 - [停止服务](#停止服务)
@@ -54,7 +53,7 @@ HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK
 
 ## 架构设计
 
-本方案采用 Docker-in-Docker（DinD）双层隔离架构。Hermes Agent 不直接挂载宿主机 `/var/run/docker.sock`，而是通过内部的 L2 Docker Daemon 和 MCP Gateway 进行所有容器操作。
+本方案采用 Docker-in-Docker（DinD）双层隔离架构。Hermes Agent 不直接挂载宿主机 `/var/run/docker.sock`，而是通过内部的 L2 Docker Daemon 进行所有容器操作。
 
 ```mermaid
 flowchart TB
@@ -69,25 +68,14 @@ flowchart TB
     InnerDockerData[("宿主机 named volume<br/>inner-docker-data<br/>L2 镜像 / 容器 / 卷")] -->|/var/lib/docker| InnerDocker
 
     subgraph L2["内层 Docker（inner-docker 内部）"]
-        Gateway["mcp-gateway<br/>docker/mcp-gateway:latest<br/>streaming MCP 端口 8811"]
-        ProfileManager["profile-manager<br/>受控的 MCP 档案管理服务"]
-        McpServers["官方 MCP 服务<br/>fetch, github, ..."]
-        DockerMcpImages["docker:// MCP 服务镜像<br/>来自 Docker Hub"]
+        McpServers["MCP 服务<br/>(通过 docker CLI 启动)"]
         Workloads["普通容器<br/>由 Agent 部署"]
-        McpConfig[("L2 named volume<br/>hermes-mcp-config<br/>档案 / 目录")]
     end
 
     Hermes -->|Docker CLI<br/>DOCKER_HOST=tcp://inner-docker:2375| InnerDocker
-    Hermes -->|MCP HTTP<br/>http://inner-docker:8811/mcp| Gateway
+    Hermes -->|MCP<br/>config.yaml mcp_servers| McpServers
 
-    Gateway -->|L2 /var/run/docker.sock| InnerDocker
-    Gateway -->|读取档案 / 目录| McpConfig
-    Gateway -->|启动 MCP 服务容器| ProfileManager
-    Gateway -->|启动 MCP 服务容器| McpServers
-    Gateway -->|启动 MCP 服务容器| DockerMcpImages
     InnerDocker -->|发布 127.0.0.1:20000-20100| Workloads
-
-    ProfileManager -->|持久化档案修改| McpConfig
 ```
 
 ### 架构要点
@@ -99,11 +87,8 @@ flowchart TB
 | 主机隔离 | Hermes **不挂载**宿主机 `/var/run/docker.sock` |
 | Docker 通信 | Hermes 的 Docker CLI 指向内层 `tcp://inner-docker:2375` |
 | DinD 特权 | `inner-docker` 是特权模式容器，在宿主机层面仍然有特权，但隔离了宿主机 Docker socket |
-| MCP Gateway | 运行在 L2 Docker 内部，不作为宿主机 Compose 服务 |
-| MCP 连接 | Hermes 通过 Compose 网络 `http://inner-docker:8811/mcp` 连接 Gateway |
-| 档案存储 | MCP 档案和目录存在 L2 的 `hermes-mcp-config` named volume 中 |
-| 服务范围 | `profile-manager`、`fetch`、`docker://` MCP 服务及 Agent 部署的容器全在 L2 内部 |
-| 端口绑定 | 默认绑定 `127.0.0.1`：Hermes `8642`、Dashboard `9119`、Gateway `8811`、工作负载 `20000-20100` |
+| MCP 注册 | 直接在 `config.yaml` 的 `mcp_servers` 下注册，URL 用 `http://inner-docker:<port>/mcp` |
+| 端口绑定 | 默认绑定 `127.0.0.1`：Hermes `8642`、Dashboard `9119`、工作负载 `20000-20100` |
 
 ## 两层 Docker 容器挂载表
 
@@ -114,8 +99,6 @@ flowchart TB
 | 类型 | 来源 | 容器内路径 | 模式 | 用途 |
 |------|------|-----------|------|------|
 | Named Volume | `inner-docker-data` | `/var/lib/docker` | rw | 存储内层 Docker 的镜像、容器、卷等所有数据 |
-| Bind Mount | `./catalog/` | `/catalog` | ro | MCP 服务目录配置文件，只读挂入 |
-| Bind Mount | `./profile-manager/` | `/profile-manager` | ro | 档案管理器源码，用于在内层构建 `profile-manager` 镜像 |
 
 #### `hermes`（`local/hermes-agent-docker-cli:latest`）
 
@@ -123,31 +106,13 @@ flowchart TB
 |------|------|-----------|------|------|
 | Bind Mount | `/home/<用户名>/.hermes`（由 `HERMES_DATA_DIR` 指定） | `/opt/data` | rw | 持久化 Hermes 配置、认证、技能、会话数据 |
 
-### 第二层 — 内层 Docker（由 `init-profile.sh` 启动）
-
-#### `mcp-gateway`（`docker/mcp-gateway:latest`）
-
-| 类型 | 来源 | 容器内路径 | 模式 | 用途 |
-|------|------|-----------|------|------|
-| Named Volume（内层） | `hermes-mcp-config` | `/root/.docker/mcp` | rw | MCP 档案和目录数据持久化 |
-| Bind Mount（内层） | `/catalog`（来自外层 `./catalog/`） | `/catalog` | ro | MCP 服务目录（透传外层挂载） |
-| Bind Mount | `/var/run/docker.sock`（内层 daemon） | `/var/run/docker.sock` | rw | 允许 Gateway 管理内层 Docker 容器 |
-
-#### `profile-manager`（`local/hermes-profile-manager:latest`）
-
-| 类型 | 来源 | 容器内路径 | 模式 | 用途 |
-|------|------|-----------|------|------|
-| Named Volume（内层） | `hermes-mcp-config` | `/root/.docker/mcp` | rw | 与 Gateway 共享档案配置，实现持久化修改 |
-
 ### 挂载路径总览
 
 | 宿主机实际路径 | 流转路径 | 最终使用方 |
 |------------|------|-----------|
-| `hermes-docker-deployment/catalog/` | → `inner-docker:/catalog` → `mcp-gateway:/catalog` | Gateway 读取 MCP 服务配置 |
-| `hermes-docker-deployment/profile-manager/` | → `inner-docker:/profile-manager` | 内层构建 `profile-manager` 镜像用 |
 | `/home/<用户名>/.hermes/` | → `hermes:/opt/data` | Hermes Agent 持久化数据 |
 
-> **注意**：`inner-docker-data` 和 `hermes-mcp-config` 均为 Docker Named Volume，不由宿主机文件系统直接访问。重启 Docker 或宿主机均不会丢失数据，除非手动执行 `docker volume rm` 或 `docker compose down -v`。
+> **注意**：`inner-docker-data` 为 Docker Named Volume，不由宿主机文件系统直接访问。重启 Docker 或宿主机均不会丢失数据，除非手动执行 `docker volume rm` 或 `docker compose down -v`。
 
 ## 配置说明
 
@@ -168,27 +133,21 @@ HERMES_DATA_DIR=/home/<你的用户名>/.hermes
 ```sh
 HERMES_GATEWAY_PORT=18642      # Hermes API 端口，默认 8642
 HERMES_DASHBOARD_PORT=19119    # Hermes 面板端口，默认 9119
-MCP_GATEWAY_PORT=18811         # MCP Gateway 端口，默认 8811
 ```
 
-可选档案配置：
+内层 Docker 工作负载端口范围：
 
 ```sh
-MCP_GATEWAY_PROFILE=hermes-default
-MCP_GATEWAY_CATALOG_REF=mcp/docker-mcp-catalog:latest
-PROFILE_MANAGER_ALLOWED_SERVERS=*
 INNER_WORKLOAD_PORT_START=20000
 INNER_WORKLOAD_PORT_END=20100
 ```
-
-`PROFILE_MANAGER_ALLOWED_SERVERS=*` 允许目录中所有合法服务名。如需限制，改为逗号分隔的白名单，例如 `fetch,github`。
 
 ## 部署命令
 
 | 命令 | 作用 |
 |------|------|
-| `./install.sh` | 准备 `.env`、校验脚本、启动 `inner-docker`、构建内层 `profile-manager` 镜像、初始化 MCP 档案、启动内层 Gateway、安装 Hermes 技能 |
-| `./run.sh` | 刷新部署状态、启动 `hermes` 容器、在 Hermes 中注册 `docker-gateway` |
+| `./install.sh` | 准备 `.env`、校验脚本、启动 Compose 服务 |
+| `./run.sh` | 启动 Compose 服务并验证容器运行状态 |
 | `./deploy.sh` | 依次执行 `run.sh` + `scripts/real-smoke-test.sh`（推荐日常使用） |
 
 ## 脚本说明
@@ -197,42 +156,27 @@ INNER_WORKLOAD_PORT_END=20100
 
 | 脚本 | 功能 |
 |------|------|
-| `scripts/init-profile.sh` | 启动 `inner-docker`、在内层构建 `profile-manager` 镜像、生成目录条目、拉取 MCP 目录、写入档案、启动内层 `mcp-gateway` |
-| `scripts/install-hermes-skill.sh` | 将 Docker MCP Gateway 操作技能安装到 `${HERMES_DATA_DIR}` |
 | `scripts/ask-yui.sh` | 向运行中的 Hermes 容器发送一条提示词 |
-| `scripts/real-smoke-test.sh` | 验证宿主机容器、L2 Docker、Gateway、Hermes MCP 注册，以及真实 Agent 提示词是否返回 `HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK` |
+| `scripts/real-smoke-test.sh` | 验证宿主机容器、L2 Docker、Hermes MCP 注册，以及真实 Agent 提示词是否返回 `HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK` |
 
-## 注册 Docker MCP Gateway
+## MCP 服务器注册
 
-`run.sh` 会自动在 Hermes 中注册 `docker-gateway`。需要手动修复注册时：
+Hermes 直接通过 `config.yaml` 注册 MCP 服务器，无需中间网关：
 
-```sh
-docker exec --user "${HERMES_UID:-10000}:${HERMES_GID:-10000}" -it "${HERMES_CONTAINER_NAME:-hermes}" \
-  sh -lc "cd /opt/hermes && /opt/hermes/.venv/bin/hermes mcp add docker-gateway --url 'http://inner-docker:8811/mcp'"
+```yaml
+mcp_servers:
+  <name>:
+    url: http://inner-docker:<port>/mcp
+    enabled: true
 ```
 
-Hermes 容器内二进制路径为 `/opt/hermes/.venv/bin/hermes`。
+部署 MCP 服务时：
 
-## 管理 MCP 配置档案
+1. 用 Docker CLI 在 inner-docker 上启动容器（`DOCKER_HOST=tcp://inner-docker:2375`）
+2. 在 `config.yaml` 注册 URL 指向 `http://inner-docker:<port>/mcp`
+3. `/reload-mcp` 即可加载新工具
 
-`profile-manager` MCP 服务为 Hermes 提供受控的档案管理能力，支持的工具有：
-
-- `profile_list` — 列出所有 MCP 档案
-- `profile_show` — 查看受管档案详情
-- `profile_server_add` — 添加目录中的 MCP 服务到档案（仅限短名称，如 `fetch`、`github`）
-- `profile_server_add_image` — 添加 Docker 镜像形式的 MCP 服务
-- `profile_server_remove` — 从档案中移除服务
-- `profile_server_remove_image` — 移除 Docker 镜像形式的 MCP 服务
-- `catalog_list` — 列出可用目录
-- `catalog_pull_official` — 拉取官方 Docker MCP 目录
-
-修改档案配置后重新执行：
-
-```sh
-./run.sh
-```
-
-Gateway 使用 `--watch` 运行，但 Hermes Agent 工具 schema 在新建任务时才会重新加载。如新工具不可见，请重启内层 `mcp-gateway`、重启 Hermes 并开始新任务。
+非 MCP 的服务（如 Web 应用）使用 Watchtower label 模式自动 CD。
 
 ## 在 Hermes 容器中使用 CLI
 
@@ -261,9 +205,6 @@ docker exec -it --user 10000:10000 hermes \
 ```sh
 # 宿主机 Compose 服务日志
 docker compose logs -f
-
-# 内层 mcp-gateway 日志
-docker compose exec inner-docker docker -H tcp://127.0.0.1:2375 logs -f mcp-gateway
 ```
 
 ## 停止服务
@@ -301,6 +242,5 @@ docker compose config >/dev/null
 ./deploy.sh
 docker compose ps
 docker compose exec inner-docker docker -H tcp://127.0.0.1:2375 ps
-docker compose exec inner-docker docker -H tcp://127.0.0.1:2375 logs --tail 80 mcp-gateway
 grep -q HERMES_DOCKER_DEPLOYMENT_REAL_TEST_OK logs/ask-yui-real-smoke.log
 ```
