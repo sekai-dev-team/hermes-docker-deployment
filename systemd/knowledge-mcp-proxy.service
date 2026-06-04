@@ -1,0 +1,14 @@
+[Unit]
+Description=Socat proxy: docker bridge -> knowledge-mcp via Tailscale
+After=network.target tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:,bind=,reuseaddr,fork TCP::
+Restart=always
+RestartSec=5
+User=
+EnvironmentFile=/etc/knowledge-mcp-proxy.env
+
+[Install]
+WantedBy=multi-user.target

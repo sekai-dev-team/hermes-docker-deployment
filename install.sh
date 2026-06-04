@@ -62,6 +62,7 @@ SCRIPTS=(install.sh)
 [ -f run.sh ] && SCRIPTS+=(run.sh)
 [ -f scripts/init-profile.sh ] && SCRIPTS+=(scripts/init-profile.sh)
 [ -f scripts/install-hermes-skill.sh ] && SCRIPTS+=(scripts/install-hermes-skill.sh)
+[ -f scripts/setup-knowledge-mcp-proxy.sh ] && SCRIPTS+=(scripts/setup-knowledge-mcp-proxy.sh)
 for script in "${SCRIPTS[@]}"; do
   bash -n "$script"
 done
@@ -69,6 +70,7 @@ done
 "${DOCKER_COMPOSE[@]}" config >/dev/null
 "$PWD/scripts/init-profile.sh"
 "$PWD/scripts/install-hermes-skill.sh"
+"$PWD/scripts/setup-knowledge-mcp-proxy.sh"
 
 echo "Hermes Docker deployment installed."
 echo "For first-time Hermes setup, run:"
