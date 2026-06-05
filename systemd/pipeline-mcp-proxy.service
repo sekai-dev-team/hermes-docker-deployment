@@ -1,10 +1,10 @@
 [Unit]
-Description=Socat proxy: hermes-mcp gateway -> knowledge-mcp via Tailscale
+Description=Socat proxy: hermes-mcp gateway -> pipeline-mcp via Tailscale
 After=network.target tailscaled.service
 Wants=tailscaled.service
 
 [Service]
-EnvironmentFile=/etc/knowledge-mcp-proxy.env
+EnvironmentFile=/etc/pipeline-mcp-proxy.env
 ExecStart=/usr/bin/socat TCP-LISTEN:${LOCAL_PORT},bind=${BIND_IP},reuseaddr,fork TCP:${REMOTE_HOST}:${REMOTE_PORT}
 Restart=always
 RestartSec=5
