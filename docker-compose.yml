@@ -11,7 +11,8 @@ services:
       - "8811"
     ports:
       - "127.0.0.1:${MCP_GATEWAY_PORT:-8811}:8811"
-      - "127.0.0.1:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}"
+      - "0.0.0.0:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}:${INNER_WORKLOAD_PORT_START:-20000}-${INNER_WORKLOAD_PORT_END:-20100}"
+      - "100.121.2.51:4222:4222"
     volumes:
       - inner-docker-data:/var/lib/docker
       - ./catalog:/catalog:ro
@@ -34,13 +35,14 @@ services:
     container_name: ${HERMES_CONTAINER_NAME:-hermes}
     init: true
     restart: always
-    command: gateway run
+    command: start-hermes-with-webui.sh gateway run
     depends_on:
       inner-docker:
         condition: service_healthy
     ports:
       - "127.0.0.1:${HERMES_GATEWAY_PORT:-8642}:8642"
       - "127.0.0.1:${HERMES_DASHBOARD_PORT:-9119}:9119"
+      - "0.0.0.0:${HERMES_WEBUI_PORT:-20200}:8787"
     volumes:
       - ${HERMES_DATA_DIR:-/home/<your_username>/.hermes}:/opt/data
     environment:
@@ -49,9 +51,32 @@ services:
       HERMES_GID: ${HERMES_GID:-10000}
       DOCKER_HOST: ${INNER_DOCKER_HOST:-tcp://inner-docker:2375}
       MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://inner-docker:8811/mcp}
+      HERMES_WEBUI_ENABLED: ${HERMES_WEBUI_ENABLED:-1}
+      HERMES_WEBUI_DIR: ${HERMES_WEBUI_DIR:-/opt/data/hermes-webui}
+      HERMES_WEBUI_HOST: ${HERMES_WEBUI_HOST:-0.0.0.0}
+      HERMES_WEBUI_PORT: 8787
+      HERMES_WEBUI_STATE_DIR: ${HERMES_WEBUI_STATE_DIR:-/opt/data/webui}
+      HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://127.0.0.1:8642}
+      HERMES_WEBUI_AGENT_DIR: ${HERMES_WEBUI_AGENT_DIR:-/opt/hermes}
+      HERMES_WEBUI_PASSWORD: ${HERMES_WEBUI_PASSWORD:-}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
     shm_size: 1g
     mem_limit: 4g
     cpus: 2.0
+    networks:
+      - hermes-mcp
+
+  syncthing-workspace:
+    image: syncthing/syncthing:latest
+    container_name: syncthing-workspace
+    restart: unless-stopped
+    volumes:
+      - syncthing_workspace_config:/var/syncthing
+      - /home/ubuntu/.hermes/workspace:/home/cc-workspace
+    ports:
+      - "127.0.0.1:8386:8384"
+    environment:
+      - STGUIAPIKEY=workspace-sync-tecent
     networks:
       - hermes-mcp
 
@@ -61,3 +86,4 @@ networks:
 volumes:
   inner-docker-data:
     name: ${INNER_DOCKER_DATA_VOLUME:-inner-docker-data}
+  syncthing_workspace_config:

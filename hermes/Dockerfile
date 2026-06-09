@@ -10,4 +10,6 @@ RUN apt-get update \
     && mkdir -p /usr/local/libexec/docker/cli-plugins
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 RUN .venv/bin/uv pip install synadia-ai-agents synadia-ai-agent-service nkeys
+COPY start-hermes-with-webui.sh /usr/local/bin/start-hermes-with-webui.sh
+RUN chmod +x /usr/local/bin/start-hermes-with-webui.sh
 USER hermes

@@ -183,6 +183,20 @@ INNER_WORKLOAD_PORT_END=20100
 
 `PROFILE_MANAGER_ALLOWED_SERVERS=*` 允许目录中所有合法服务名。如需限制，改为逗号分隔的白名单，例如 `fetch,github`。
 
+## Hermes WebUI 维护
+
+当前部署把 Hermes WebUI 作为 `hermes` 容器内的伴随进程运行：Compose 先执行 `start-hermes-with-webui.sh`，该脚本在 `/opt/data/hermes-webui/server.py` 存在时后台启动 WebUI，然后再启动 `hermes gateway run`。WebUI 源码和状态不打进镜像，仍保存在 `${HERMES_DATA_DIR}/hermes-webui` 和 `${HERMES_DATA_DIR}/webui`，因此重建 Hermes 镜像不会覆盖 WebUI checkout 或用户状态。
+
+维护流程：
+
+1. 在 `.env` 中设置 `HERMES_WEBUI_PASSWORD` 和 `HERMES_API_KEY`，不要把实际密钥提交到 Git。
+2. WebUI 代码更新时，在宿主机 `${HERMES_DATA_DIR}/hermes-webui` 中执行 `git pull`，必要时按该项目 README 更新依赖。
+3. Hermes 镜像更新时先 `docker compose build hermes`，再在维护窗口执行 `docker compose up -d --force-recreate hermes`。
+4. 重建后确认端口映射仍包含 `${HERMES_WEBUI_PORT:-20200}:8787`，并检查 `docker logs hermes --tail 80` 中的 `[webui]` 启动日志。
+5. 如果需要临时关闭 WebUI，在 `.env` 设置 `HERMES_WEBUI_ENABLED=0` 后 recreate `hermes`。
+
+WebUI 对外端口由 `HERMES_WEBUI_PORT` 控制，默认 `20200`；容器内端口固定为 `8787`。
+
 ## 部署命令
 
 | 命令 | 作用 |
